@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slime 3D</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #mouse-hint {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgb(0 0 0 / 65%);
+      color: #fff;
+      font: 14px system-ui, sans-serif;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #camera-hint {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      max-width: calc(100% - 300px);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgb(0 0 0 / 65%);
+      color: #fff;
+      font: 14px system-ui, sans-serif;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #game-hud,
+    #transform-hint {
+      position: fixed;
+      padding: 12px 14px;
+      border: 1px solid rgb(255 255 255 / 24%);
+      border-radius: 10px;
+      background: rgb(12 25 38 / 82%);
+      color: #fff;
+      font: 14px system-ui, sans-serif;
+      box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+    }
+
+    #game-hud {
+      top: 16px;
+      left: 16px;
+      width: 190px;
+    }
+
+    #level-label,
+    #form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    #health-track {
+      height: 12px;
+      margin-top: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #39434c;
+    }
+
+    #health-bar {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #24c878, #9cf25d);
+      transition: width 180ms ease;
+    }
+
+    #transform-hint {
+      right: 16px;
+      bottom: 64px;
+      max-width: 240px;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      #game-hud {
+        top: 12px;
+        left: 12px;
+        width: 150px;
+        padding: 10px;
+      }
+
+      #camera-hint {
+        top: 128px;
+        right: 12px;
+        left: 12px;
+        width: calc(100% - 32px);
+        box-sizing: border-box;
+        font-size: 12px;
+      }
+
+      #transform-hint {
+        right: 12px;
+        bottom: 64px;
+        left: 12px;
+        max-width: none;
+      }
+
+      #mouse-hint {
+        bottom: 12px;
+        width: max-content;
+        max-width: calc(100% - 24px);
+        box-sizing: border-box;
+        font-size: 12px;
+      }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <section id="game-hud" aria-label="Statistiques du personnage">
+    <strong id="level-label">Niveau 1</strong>
+    <span id="form-label" aria-live="polite">Forme : slime cyan</span>
+    <span>PV : <span id="health-label">100 / 100</span></span>
+    <div
+      id="health-track"
+      role="progressbar"
+      aria-label="Points de vie"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="100"
+    >
+      <span id="health-bar"></span>
+    </div>
+  </section>
+  <div id="camera-hint" role="status" aria-live="polite">
+    Caméra : 3e personne (U) — I : 1re personne · W : isométrique · O : side scroller
+  </div>
+  <div id="transform-hint">
+    Appuie sur <strong>B</strong> pour changer d’apparence<br>
+    <small>Voiture → garçon → boule de slime → slime cyan</small>
+  </div>
+  <div id="mouse-hint" role="status" aria-live="polite">
+    Appuie sur Maj pour verrouiller la souris en 1re personne
+  </div>
+  <script type="module">
+    import * as THREE from "three";
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#ffffff");
+
+    const character = new THREE.Group();
+    scene.add(character);
+
+    const firstPersonCamera = new THREE.PerspectiveCamera(
+      45,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    firstPersonCamera.position.set(0, 2.12, 0.72);
+    firstPersonCamera.rotation.order = "YXZ";
+
+    const thirdPersonCamera = new THREE.PerspectiveCamera(
+      45,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    thirdPersonCamera.position.set(0, 3.6, 8);
+    thirdPersonCamera.lookAt(0, 1.5, 0);
+
+    const isometricCamera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
+    isometricCamera.position.set(7, 7, 7);
+    isometricCamera.lookAt(0, 1.5, 0);
+
+    const sideScrollerCamera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
+    sideScrollerCamera.position.set(8, 1.7, 0);
+    sideScrollerCamera.lookAt(0, 1.7, 0);
+
+    character.add(
+      firstPersonCamera,
+      thirdPersonCamera,
+      isometricCamera,
+      sideScrollerCamera
+    );
+
+    const cameraModes = {
+      KeyI: { camera: firstPersonCamera, label: "1re personne (I)" },
+      KeyU: { camera: thirdPersonCamera, label: "3e personne (U)" },
+      KeyW: { camera: isometricCamera, label: "isométrique (W)" },
+      KeyO: { camera: sideScrollerCamera, label: "side scroller (O)" }
+    };
+    let activeCamera = thirdPersonCamera;
+    const cameraHint = document.getElementById("camera-hint");
+
+    let yaw = 0;
+    let pitch = 0;
+    const mouseSensitivity = 0.0025;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+    const mouseHint = document.getElementById("mouse-hint");
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(-3, 5, 6);
+    scene.add(light);
+
+    const cyan = new THREE.MeshStandardMaterial({
+      color: "#11c8dc",
+      roughness: 0.32,
+      metalness: 0.05
+    });
+    const cyanLight = new THREE.MeshStandardMaterial({
+      color: "#b8fbff",
+      roughness: 0.28
+    });
+    const darkFace = new THREE.MeshStandardMaterial({ color: "#12354a" });
+    const carPaint = new THREE.MeshStandardMaterial({
+      color: "#f0a52e",
+      roughness: 0.35,
+      metalness: 0.2
+    });
+    const tireMaterial = new THREE.MeshStandardMaterial({ color: "#222a32" });
+    const glassMaterial = new THREE.MeshStandardMaterial({
+      color: "#91e8f5",
+      metalness: 0.15,
+      roughness: 0.2
+    });
+    const skinMaterial = new THREE.MeshStandardMaterial({ color: "#f2bc91" });
+    const blueHair = new THREE.MeshStandardMaterial({ color: "#1976ed" });
+    const shirtMaterial = new THREE.MeshStandardMaterial({ color: "#f1c644" });
+    const pantsMaterial = new THREE.MeshStandardMaterial({ color: "#3454a4" });
+    const white = new THREE.MeshStandardMaterial({ color: "#ffffff" });
+
+    const characterSkin = new THREE.Group();
+    character.add(characterSkin);
+
+    const forms = [];
+    function createForm(label, cameraPosition, focusHeight) {
+      const group = new THREE.Group();
+      group.visible = false;
+      characterSkin.add(group);
+      forms.push({ label, group, cameraPosition, focusHeight });
+      return group;
+    }
+
+    function addSkinMesh(parent, geometry, material, position, scale = [1, 1, 1]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.scale.set(...scale);
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function addSkinCapsule(parent, radius, length, position, material, rotationZ = 0) {
+      const mesh = addSkinMesh(
+        parent,
+        new THREE.CapsuleGeometry(radius, length, 8, 16),
+        material,
+        position
+      );
+      mesh.rotation.z = rotationZ;
+      return mesh;
+    }
+
+    const smileShape = new THREE.Shape();
+    smileShape.moveTo(-0.18, 0.04);
+    smileShape.quadraticCurveTo(0, -0.12, 0.18, 0.04);
+    smileShape.lineTo(0.14, 0.07);
+    smileShape.quadraticCurveTo(0, -0.04, -0.14, 0.07);
+    smileShape.closePath();
+    const smileGeometry = new THREE.ShapeGeometry(smileShape);
+
+    function addSmile(parent, y, z) {
+      addSkinMesh(parent, smileGeometry, darkFace, [0, y, z]);
+    }
+
+    const carForm = createForm("voiture", [0, 0.9, 1], 0.85);
+    addSkinMesh(
+      carForm,
+      new THREE.BoxGeometry(2.2, 0.55, 1.45),
+      carPaint,
+      [0, 0.76, 0]
+    );
+    addSkinMesh(
+      carForm,
+      new THREE.BoxGeometry(1.25, 0.56, 0.98),
+      glassMaterial,
+      [0, 1.27, -0.02]
+    );
+    addSkinMesh(
+      carForm,
+      new THREE.BoxGeometry(1.4, 0.13, 1.08),
+      carPaint,
+      [0, 1.59, -0.02]
+    );
+    for (const x of [-0.94, 0.94]) {
+      for (const z of [-0.47, 0.47]) {
+        const wheel = addSkinMesh(
+          carForm,
+          new THREE.CylinderGeometry(0.31, 0.31, 0.2, 24),
+          tireMaterial,
+          [x, 0.42, z]
+        );
+        wheel.rotation.z = Math.PI / 2;
+      }
+    }
+    for (const x of [-0.76, 0.76]) {
+      addSkinMesh(
+        carForm,
+        new THREE.BoxGeometry(0.34, 0.15, 0.06),
+        white,
+        [x, 0.82, 0.75]
+      );
+    }
+
+    const boyForm = createForm("garçon aux cheveux bleus", [0, 1.85, 0.48], 1.15);
+    addSkinMesh(
+      boyForm,
+      new THREE.BoxGeometry(0.78, 0.82, 0.44),
+      shirtMaterial,
+      [0, 1.05, 0]
+    );
+    addSkinCapsule(boyForm, 0.15, 0.55, [-0.25, 0.37, 0], pantsMaterial);
+    addSkinCapsule(boyForm, 0.15, 0.55, [0.25, 0.37, 0], pantsMaterial);
+    addSkinCapsule(boyForm, 0.13, 0.5, [-0.52, 1.08, 0], skinMaterial, -0.9);
+    addSkinCapsule(boyForm, 0.13, 0.5, [0.52, 1.08, 0], skinMaterial, 0.9);
+    addSkinMesh(
+      boyForm,
+      new THREE.SphereGeometry(0.42, 24, 18),
+      skinMaterial,
+      [0, 1.83, 0]
+    );
+    addSkinMesh(
+      boyForm,
+      new THREE.SphereGeometry(0.44, 24, 16),
+      blueHair,
+      [0, 2.08, -0.015],
+      [1, 0.48, 1]
+    );
+    for (const x of [-0.15, 0.15]) {
+      addSkinMesh(boyForm, new THREE.SphereGeometry(0.055, 12, 10), white, [
+        x, 1.86, 0.37
+      ]);
+      addSkinMesh(boyForm, new THREE.SphereGeometry(0.025, 10, 8), darkFace, [
+        x, 1.86, 0.418
+      ]);
+    }
+    addSmile(boyForm, 1.64, 0.4);
+
+    const ballForm = createForm("boule de slime", [0, 0.95, 0.86], 0.85);
+    addSkinMesh(
+      ballForm,
+      new THREE.SphereGeometry(0.86, 32, 24),
+      cyan,
+      [0, 0.88, 0]
+    );
+    for (const x of [-0.22, 0.22]) {
+      addSkinMesh(ballForm, new THREE.SphereGeometry(0.075, 16, 12), white, [
+        x, 1.02, 0.83
+      ]);
+      addSkinMesh(ballForm, new THREE.SphereGeometry(0.035, 12, 10), darkFace, [
+        x, 1.02, 0.88
+      ]);
+    }
+    addSmile(ballForm, 0.76, 0.86);
+    addSkinMesh(
+      ballForm,
+      new THREE.SphereGeometry(0.12, 16, 12),
+      cyanLight,
+      [-0.42, 1.25, 0.66],
+      [0.65, 1.2, 0.25]
+    );
+
+    const slimeForm = createForm("slime cyan", [0, 1.55, 0.73], 1.05);
+    addSkinMesh(
+      slimeForm,
+      new THREE.SphereGeometry(1, 32, 24),
+      cyan,
+      [0, 1.05, 0],
+      [0.82, 1.05, 0.72]
+    );
+    for (const x of [-0.23, 0.23]) {
+      addSkinMesh(slimeForm, new THREE.SphereGeometry(0.075, 16, 12), white, [
+        x, 1.34, 0.68
+      ]);
+      addSkinMesh(slimeForm, new THREE.SphereGeometry(0.035, 12, 10), darkFace, [
+        x, 1.34, 0.74
+      ]);
+    }
+    addSmile(slimeForm, 1.02, 0.73);
+    addSkinMesh(
+      slimeForm,
+      new THREE.SphereGeometry(0.14, 16, 12),
+      cyanLight,
+      [-0.4, 1.62, 0.52],
+      [0.65, 1.2, 0.3]
+    );
+
+    let currentFormIndex = forms.length - 1;
+    let transformationsInCycle = 0;
+    let level = 1;
+    let maxHealth = 100;
+    let health = maxHealth;
+    forms[currentFormIndex].group.visible = true;
+
+    const levelLabel = document.getElementById("level-label");
+    const formLabel = document.getElementById("form-label");
+    const healthLabel = document.getElementById("health-label");
+    const healthTrack = document.getElementById("health-track");
+    const healthBar = document.getElementById("health-bar");
+
+    function updateHud() {
+      levelLabel.textContent = `Niveau ${level}`;
+      healthLabel.textContent = `${health} / ${maxHealth}`;
+      healthTrack.setAttribute("aria-valuemax", String(maxHealth));
+      healthTrack.setAttribute("aria-valuenow", String(health));
+      healthBar.style.width = `${(health / maxHealth) * 100}%`;
+    }
+
+    function frameCameras(form) {
+      firstPersonCamera.position.set(...form.cameraPosition);
+      thirdPersonCamera.position.set(0, form.focusHeight + 2.1, 8);
+      thirdPersonCamera.lookAt(0, form.focusHeight, 0);
+      isometricCamera.position.set(7, form.focusHeight + 9.9, 7);
+      isometricCamera.lookAt(0, form.focusHeight, 0);
+      sideScrollerCamera.position.set(8, form.focusHeight, 0);
+      sideScrollerCamera.lookAt(0, form.focusHeight, 0);
+    }
+
+    function transformCharacter() {
+      forms[currentFormIndex].group.visible = false;
+      currentFormIndex = (currentFormIndex + 1) % forms.length;
+      const form = forms[currentFormIndex];
+      form.group.visible = true;
+      formLabel.textContent = `Forme : ${form.label}`;
+      frameCameras(form);
+      transformationsInCycle += 1;
+
+      if (transformationsInCycle === forms.length) {
+        transformationsInCycle = 0;
+        level += 1;
+        maxHealth += 20;
+        health = maxHealth;
+        updateHud();
+      }
+
+      render();
+    }
+
+    frameCameras(forms[currentFormIndex]);
+    updateHud();
+
+    function render() {
+      renderer.render(scene, activeCamera);
+    }
+
+    function resize() {
+      const aspect = window.innerWidth / window.innerHeight;
+      for (const camera of [firstPersonCamera, thirdPersonCamera]) {
+        camera.aspect = aspect;
+        camera.updateProjectionMatrix();
+      }
+
+      for (const camera of [isometricCamera, sideScrollerCamera]) {
+        const halfHeight = 2.5;
+        camera.left = -halfHeight * aspect;
+        camera.right = halfHeight * aspect;
+        camera.top = halfHeight;
+        camera.bottom = -halfHeight;
+        camera.updateProjectionMatrix();
+      }
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      render();
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.code === "KeyB" && !event.repeat) {
+        transformCharacter();
+        return;
+      }
+
+      if (!event.repeat && cameraModes[event.code]) {
+        activeCamera = cameraModes[event.code].camera;
+        yaw = Math.PI;
+        pitch = 0;
+        cameraHint.textContent = `Caméra : ${cameraModes[event.code].label} — I : 1re personne · U : 3e personne · W : isométrique · O : side scroller`;
+        mouseHint.textContent =
+          document.pointerLockElement === renderer.domElement
+            ? "Souris verrouillée — Maj ou Échap pour la libérer"
+            : "Appuie sur Maj pour verrouiller la souris en 1re personne";
+        if (activeCamera === firstPersonCamera) {
+          firstPersonCamera.rotation.set(pitch, yaw, 0);
+        }
+        render();
+        return;
+      }
+
+      if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !event.repeat) {
+        event.preventDefault();
+
+        if (document.pointerLockElement === renderer.domElement) {
+          document.exitPointerLock();
+        } else {
+          renderer.domElement.requestPointerLock().catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            mouseHint.textContent = `Impossible de verrouiller la souris : ${message}`;
+          });
+        }
+      }
+    });
+
+    document.addEventListener("pointerlockchange", () => {
+      mouseHint.textContent =
+        document.pointerLockElement === renderer.domElement
+          ? "Souris verrouillée — Maj ou Échap pour la libérer"
+          : "Appuie sur Maj pour verrouiller la souris en 1re personne";
+    });
+
+    document.addEventListener("mousemove", (event) => {
+      if (document.pointerLockElement !== renderer.domElement) {
+        return;
+      }
+
+      if (activeCamera !== firstPersonCamera) {
+        return;
+      }
+
+      yaw -= event.movementX * mouseSensitivity;
+      pitch += event.movementY * mouseSensitivity;
+      pitch = THREE.MathUtils.clamp(
+        pitch,
+        -Math.PI / 2 + 0.05,
+        Math.PI / 2 - 0.05
+      );
+      firstPersonCamera.rotation.set(pitch, yaw, 0);
+      render();
+    });
+
+    window.addEventListener("resize", resize);
+    resize();
+  </script>
+</body>
+</html>
